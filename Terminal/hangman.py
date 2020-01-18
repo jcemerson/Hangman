@@ -7,40 +7,155 @@ An interactive game of Hangman for the command terminal.
 
 How to play:
 
-At the start of the game, a word (secret_word) is chosen for the player to
-guess, one letter at a time. Each guessed letter is recorded and the remaining
-letters are displayed at the start of each guessing round.
+    At the start of the game, a word (secret_word) is chosen for the player to
+    guess, one letter at a time. Each guessed letter is recorded and the
+    remaining letters are displayed at the start of each guessing round.
 
-If playing the "hangman_with_hints" version, entering * as the guess will
-return a list of all possible matches in the wordlist based on the currently
-guesses word. See match_with_gaps(), show_possible_matches(), and
-get_guessed_word() for details.
+    Each game starts with six guesses.
 
-Each game starts with three warnings.
+    During each guessing round, the guess is evaluated (invalid, incorrect, or
+    correct) and each correcly guessed letter is revealed. If a guess is
+    invalid (not an alpha character or more than one character*) or if it has
+    already been guessed (within each game), the player is penalized by losing
+    a warning. Once there are no warnings left, a guess will be lost instead.
+    See warning_penalty() for details.
 
-During each guessing round, the guess is evaluated (invalid, incorrect, or
-correct) and each correcly guessed letter is revealed. If a guess is invalid
-(not an alpha character or more than one character) or it if has already been
-guessed (during each game), the player is penalized by losing a warning. Once
-there are no warnings left, a guess will be lost instead. See warning_penalty()
-for details.
+    *There is one exception to this rule. See Hints below.
 
-Each game starts with six guesses.
+    For each valid (i.e. single alpha character), but incorrect letter guessed
+    (i.e. not in the word), the player will lose:
+        *   one guess for all consonants
+        *   two guesses for vowels ("y" is not a vowel for the purposes of this
+            game).
+    See guess_penalty() for details.
 
-For each valid, but incorrect guess (guessed letter is not in the word), the
-player will lose:
-    *   one guess for all consonants
-    *   two guesses for vowels ("y" is not a vowel for the purposes of this
-        game).
-See guess_penalty() for details.
+    The game is over once all guesses have been lost or all letters in the word
+    have been guessed. If the game is won, a score will be returned (see
+    total_score() for details).
 
-The game is over once all guesses have been lost or all letters in the word
-have been guessed. If the game is won, a score will be returned (see
-total_score() for details).
+    Hints:
+    *   Entering an asterisk (*) as the guess returns a list of all possible
+        matches in the wordlist based on the currently guesses word.
+        See match_with_gaps(), show_possible_matches(), and get_guessed_word()
+        for details.
+    *   Entering an asterisk + a percent-sign (*%) as the guess will return a
+        list of all letters that comprise the possible match words returned by
+        entering *, but with the addition of the percentage of each letters
+        representation in the overall count of letters.
+
+    It's important to note that the words returned by * and the stats returned
+    by *% will be comprised of ALL words in the wordlist that are possible
+    matches based on the value of guessed_word. This does NOT take into
+    remove any correct or incorrect letters already guessed, so take the hints
+    with caution.
+
+    ###TODO###
+    Difficulty:
+
+        There are four difficulty levels: Easy, Normal, Hard, and Expert.
+            *   Easy:
+                *   Five warnings
+                *   Unlimited hints
+                    *   No hint restrictions.
+                *   Score multiplyer: 0.5 (cuts score in half).
+            *   Normal:
+                *   Three warnings
+                *   Three hints
+                    *   Hints will be restricted when the number of possible
+                        matches is less than five.
+                    *   Score multiplyer: 1.0 (full score value).
+            *   Hard:
+                *   One warning
+                *   One hint
+                    *   Hints will be restricted when the number of possible
+                        matches is less than ten.
+                    *   Score multiplyer: 1.5 (boosts score by half).
+            *   Expert:
+                *   No warnings
+                *   No hints
+                *   Score multiplyer: 2.0 (double score value).
+
+    ? Keep playing until you die. Scores compound with each subsequent game. ?
 """
 
+import os
 import random
 import string
+
+PENALTY_STAGES = {
+6: """    ____
+    |  |
+    |
+    |
+    |
+  __|__
+""",
+5: """
+    ____
+    |  |
+    |  0
+    |
+    |
+  __|__
+""",
+4: """
+    ____
+    |  |
+    |  0
+    |  |
+    |
+  __|__
+""",
+3: """
+    ____
+    |  |
+    |  0
+    | /|
+    |
+  __|__
+""",
+2: """
+    ____
+    |  |
+    |  0
+    | /|\\
+    |
+  __|__
+""",
+1: """
+    ____
+    |  |
+    |  0
+    | /|\\
+    | /
+  __|__
+""",
+0: """
+    ____
+    |  |
+    |  0
+    | /|\\
+    | / \\
+  __|__
+""",
+-1: """
+    ____
+    |  |
+    |  0
+    | /|\\
+    | / \\
+  __|__
+""",
+"victory": """
+    ____
+    |  |
+    |
+    |      \\o/ "heee!"
+    |       |
+  __|__    / \\
+"""
+}
+
 
 def load_words():
     """
@@ -49,13 +164,15 @@ def load_words():
     Note: Depending on the size of the word list, this function may
     take a while to finish.
     """
+    print("\nLoading word list from file...")
+    file_path = os.path.dirname(os.path.realpath(__file__))
     wordlist_filename = "words.txt"
-    print("Loading word list from file...")
-    wordlist_file = open(wordlist_filename, 'r')
+    wordlist_file_path = os.path.join(file_path, wordlist_filename)
+    wordlist_file = open(wordlist_file_path, 'r')
     line = wordlist_file.readline()
     wordlist = line.split()
     wordlist_len = len(wordlist)
-    print(f"{wordlist_len} words loaded.")
+    print(f"{wordlist_len} words loaded.", end='')
     return wordlist
 
 
@@ -98,7 +215,7 @@ def get_guessed_word(secret_word, letters_guessed):
     """
     # Return each letter from secret_word if letter is in letters_guessed,
     # else return '_ ' when letter is not.
-    guessed = (l if l in letters_guessed else '_ ' for l in secret_word)
+    guessed = (ltr if ltr in letters_guessed else '_ ' for ltr in secret_word)
     return ''.join(guessed)
 
 
@@ -110,7 +227,7 @@ def get_available_letters(letters_guessed):
         * letters_guessed: List; Which letters have been guessed so far.
     """
     letters = string.ascii_lowercase
-    available_letters = (l for l in letters if l not in letters_guessed)
+    available_letters = (ltr for ltr in letters if ltr not in letters_guessed)
     return ''.join(available_letters)
 
 
@@ -155,7 +272,7 @@ def guess_penalty(guesses_left, guessed_word, separator, type, guess=None):
     if guess is None:
         message = message + " You have no warnings left so you lose one guess:"
 
-    print(f"{message} {guessed_word}{separator}")
+    print(f"\n{message} {guessed_word}{separator}")
     return guesses_left
 
 
@@ -182,116 +299,16 @@ def warning_penalty(warnings_left, guessed_word, separator, type):
     elif type == 're-guess':
         message = "Oops! You've already guessed that letter."
     s = 's' if warnings_left != 1 else ''
-    print(message, f"You have {warnings_left} warning{s} left:",
+    print(f"\n{message}", f"You have {warnings_left} warning{s} left:",
           f"{guessed_word}{separator}")
     return warnings_left
 
 
 def total_score(secret_word, guesses_left):
     """Final score when the game is won."""
-    unique_letter_count = len(set((l for l in secret_word)))
+    unique_letter_count = len(set((ltr for ltr in secret_word)))
     total_score = unique_letter_count * guesses_left
     return total_score
-
-
-def hangman(secret_word):
-    """
-    Start an interactive game of Hangman.
-
-    Parameters:
-    * secret_word:  String; The word to guess. Chosen at random from wordlist.
-                    See load_words() and choose_word() for details.
-    """
-    warnings_left = 3
-    guesses_left = 6
-    victory = False
-    letters_guessed = []
-    guessed_word = get_guessed_word(secret_word, letters_guessed)
-    separator = "\n------------"
-    secret_word_len = len(secret_word)
-
-    print("Welcome to the game Hangman!",
-        f"I am thinking of a word that is {secret_word_len} letters long.",
-        f"You have 3 warnings left.{separator}",
-        sep="\n")
-
-    # While the game is not over:
-    while guesses_left > 0 and victory is False:
-        available_letters = get_available_letters(letters_guessed)
-        es = 'es' if guesses_left != 1 else ''
-        print(f"You have {guesses_left} guess{es} left.",
-              f"Available letters: {available_letters}",
-              sep="\n")
-        guess = input("Please guess a letter: ").lower()
-
-        # Invalid guess (not alpha character).
-        if not guess.isalpha() or len(guess) > 1:
-            type = 'invalid'
-            # If warnings remain, lose a warning.
-            if warnings_left > 0:
-                warnings_left = warning_penalty(
-                    warnings_left,
-                    guessed_word,
-                    separator,
-                    type)
-            # If no warnings remain, lose a guess.
-            else:
-                guesses_left = guess_penalty(
-                    guesses_left,
-                    guessed_word,
-                    separator,
-                    type)
-            continue
-
-        #Re-guess (already guessed letter).
-        if guess in letters_guessed:
-            type = 're-guess'
-            # If warnings remain, lose a warning.
-            if warnings_left > 0:
-                warnings_left = warning_penalty(
-                    warnings_left,
-                    guessed_word,
-                    separator,
-                    type)
-
-            # If no warnings remain, lose a guess.
-            else:
-                guesses_left = guess_penalty(
-                    guesses_left,
-                    guessed_word,
-                    separator,
-                    type)
-            continue
-
-        # If incorrect guess (not in secret_word), lose a guess.
-        if guess not in secret_word:
-            letters_guessed.append(guess)
-            guesses_left = guess_penalty(
-                guesses_left,
-                guessed_word,
-                separator,
-                'incorrect',
-                guess)
-        # Correct guess.
-        else:
-            letters_guessed.append(guess)
-            guessed_word = get_guessed_word(secret_word, letters_guessed)
-            print(f"Good guess: {guessed_word}{separator}")
-            victory = is_word_guessed(secret_word, letters_guessed)
-
-    # If victory is True, game is won, so get the score.
-    if victory == True:
-        score = total_score(secret_word, guesses_left)
-        print("Congratulations, you won! \\o/",
-              f"Your total score for this game is: {score}",
-              sep="\n")
-    # Else guesses are gone and the game is lost.
-    else:
-        print("Sorry, you ran out of guesses.",
-            f"The word was '{secret_word}'.")
-
-
-# -----------------------------------
 
 
 def match_with_gaps(my_word, other_word):
@@ -311,37 +328,77 @@ def match_with_gaps(my_word, other_word):
     if len(trimmed_my_word) != len(other_word):
         return False
 
-    for l in set(trimmed_my_word.replace('_', '')):
-        mw_l_count = trimmed_my_word.count(l)
-        ow_l_count = other_word.count(l)
-        if mw_l_count != ow_l_count:
+    for ltr in set(trimmed_my_word.replace('_', '')):
+        mw_ltr_count = trimmed_my_word.count(ltr)
+        ow_ltr_count = other_word.count(ltr)
+        if mw_ltr_count != ow_ltr_count:
             return False
 
     match_word = ''
-    for i, l in enumerate(trimmed_my_word):
-        if l == other_word[i]:
-            match_word += l
+    for i, ltr in enumerate(trimmed_my_word):
+        if ltr == other_word[i]:
+            match_word += ltr
         else:
             match_word += '_ '
+    return my_word == match_word
 
-    return True if my_word == match_word else False
 
-
-def show_possible_matches(my_word):
+def show_possible_matches(my_word, print_out=True):
     """
     Print every word in wordlist that matches my_word.
+
+    *   my_word:    String; Current guess of secret_word. See get_guessed_word
+                    for details.
+
+    *   print_out: Boolean; Return a value if False. Defaults to True.
     """
-    separator = "\n------------"
     matches = []
     for word in wordlist:
         if match_with_gaps(my_word, word):
             matches.append(word)
-    print("Possible word matches are:\n",
-          ' '.join(matches),
-          separator,
-          sep='')
+    if print_out:
+        print("\nPossible word matches are:\n\n",
+              ' '.join(matches),
+              f"\n~~~~~~~~~~~~~~~",
+              sep='')
+    if not print_out:
+        return matches
 
-def hangman_with_hints(secret_word):
+
+def get_letter_stats(matches):
+    """
+    Print a statistical breakdown of the presence of each letter in the
+    current list of possible matches from wordlist to secret_word, sorted
+    highest to lowest occurrence.
+
+    Parameters:
+    *   matches:    List; All possible matches in wordlist for guessed word.
+                    See get_guessed_word(), match_with_gaps(), and
+                    show_possible_matches() for details.
+    """
+    matches_string = "".join(matches)
+    total_ltr_count = len(matches_string)
+    unique_letters = set(matches_string)
+    ltr_stats = []
+    for ltr in unique_letters:
+        ltr_count = matches_string.count(ltr)
+        ltr_percent = ltr_count/total_ltr_count
+        ltr_stats.append((ltr, ltr_percent))
+
+    ltr_stats.sort(key=lambda ltr: ltr[1], reverse=True)
+
+    final_stats = []
+    for ltr_stat in ltr_stats:
+        ltr = ltr_stat[0]
+        pcnt = ltr_stat[1]*100
+        final_stats.append(f"{ltr}: {pcnt:.2f}%")
+    print("\nLetter stats for the possible matches:\n",
+          "; ".join(final_stats),
+          "~~~~~~~~~~~~~~~",
+          sep="\n")
+
+
+def hangman(secret_word):
     """
     Start an interactive game of Hangman.
 
@@ -354,26 +411,38 @@ def hangman_with_hints(secret_word):
     victory = False
     letters_guessed = []
     guessed_word = get_guessed_word(secret_word, letters_guessed)
-    separator = "\n------------"
+    separator = "\n~~~~~~~~~~~~~~~"
     secret_word_len = len(secret_word)
 
-    print("Welcome to the game Hangman!",
-        f"I am thinking of a word that is {secret_word_len} letters long.",
-        f"You have 3 warnings left.{separator}",
-        sep="\n")
+    print(f"{separator}",
+          f"Welcome to the game Hangman!\n",
+          f"I am thinking of a word that is {secret_word_len} letters long."
+        + f"{separator}",
+          f"You have 3 warnings left.{separator}",
+          sep="\n")
 
     # While the game is not over:
     while guesses_left > 0 and victory is False:
         available_letters = get_available_letters(letters_guessed)
         es = 'es' if guesses_left != 1 else ''
-        print(f"You have {guesses_left} guess{es} left.",
-              f"Available letters: {available_letters}",
-              sep="\n")
+        print(f"You have {guesses_left} guess{es} left.{separator}\n",
+              f"Available letters: {available_letters}\n",
+              PENALTY_STAGES[guesses_left],
+              sep="")
         guess = input("Please guess a letter: ").lower()
 
         # Request a hint; a list of possible matches.
         if guess == '*':
             show_possible_matches(guessed_word)
+            print(f"{guessed_word}",
+                  f"{separator}")
+            continue
+        # Secret hint of letter stats.
+        elif guess == '*%':
+            matches = show_possible_matches(guessed_word, False)
+            get_letter_stats(matches)
+            print(f"{guessed_word}",
+                  f"{separator}")
             continue
 
         # Invalid guess (not alpha character).
@@ -428,23 +497,24 @@ def hangman_with_hints(secret_word):
         else:
             letters_guessed.append(guess)
             guessed_word = get_guessed_word(secret_word, letters_guessed)
-            print(f"Good guess: {guessed_word}{separator}")
+            print(f"\nGood guess: {guessed_word}{separator}")
             victory = is_word_guessed(secret_word, letters_guessed)
 
     # If victory is True, game is won, so get the score.
-    if victory is True:
+    if victory == True:
         score = total_score(secret_word, guesses_left)
-        print("Congratulations, you won! \\o/",
+        print("Congratulations, you won!",
+              PENALTY_STAGES["victory"],
               f"Your total score for this game is: {score}",
               sep="\n")
     # Else guesses are gone and the game is lost.
     else:
         print("Sorry, you ran out of guesses.",
-            f"The word was '{secret_word}'.")
+              PENALTY_STAGES[guesses_left],
+              f"\nThe word was '{secret_word}'.")
 
 
 if __name__ == "__main__":
     wordlist = load_words()
     secret_word = choose_word(wordlist)
-    # hangman(secret_word)
-    hangman_with_hints(secret_word)
+    hangman(secret_word)
